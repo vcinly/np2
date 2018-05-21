@@ -30,6 +30,7 @@
 
     install() {
         INSTALL_DIR="$(np2_install_dir)"
+        NP2_SOURCE_LOCAL=""
 
         mkdir -p "$INSTALL_DIR"
 

@@ -8,7 +8,7 @@
     }
 
     np2_latest_version() {
-        echo "v0.0.1"
+        cat "${NP2_DIR}/version"
     }
 
     np2_download() {
@@ -30,18 +30,29 @@
 
     install() {
         INSTALL_DIR="$(np2_install_dir)"
-        NP2_SOURCE_LOCAL="https://raw.githubusercontent.com/vcinly/np2/master/np2"
+        NP2_SOURCE_LOCAL="https://raw.githubusercontent.com/vcinly/np2/master"
 
         mkdir -p "$INSTALL_DIR"
 
         if [ -f "$INSTALL_DIR/np2" ]; then
             echo "=> np2 is already installed in $INSTALL_DIR, trying to update the script"
+            
         else
             echo "=> Downloading np2 as script to '$INSTALL_DIR'"
         fi
 
-        np2_download -s "$NP2_SOURCE_LOCAL" -o "$INSTALL_DIR/np2" || {
-            echo >&2 "Failed to download '$NP2_SOURCE_LOCAL'"
+        np2_download -s "$NP2_SOURCE_LOCAL/np2" -o "$INSTALL_DIR/np2" || {
+            echo >&2 "Failed to download '$NP2_SOURCE_LOCAL/np2'"
+            return 1
+        } &
+
+        np2_download -s "$NP2_SOURCE_LOCAL/install.sh" -o "$INSTALL_DIR/install.sh" || {
+            echo >&2 "Failed to download '$NP2_SOURCE_LOCAL/install.sh'"
+            return 1
+        } &
+
+        np2_download -s "$NP2_SOURCE_LOCAL/version" -o "$INSTALL_DIR/version" || {
+            echo >&2 "Failed to download '$NP2_SOURCE_LOCAL/version'"
             return 1
         } &
 
@@ -55,7 +66,14 @@
             return 3
         }
 
+        if [ -f "/usr/local/bin/np2" ]
+        then
+	          rm -f "/usr/local/bin/np2"
+        fi
         ln -s "$INSTALL_DIR/np2" /usr/local/bin
+
+        echo "NP2 install or update success!"
+        echo "Use \`np2 -h\` to get help."
     }
 
     install

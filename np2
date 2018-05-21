@@ -5,7 +5,7 @@
 # TODO
 # restart
 
-FORMAT_COUNT=(0 0 0 8 0 0 0 0)
+FORMAT_COUNT=(3 4 5 8 6 4 4 5)
 FORMAT_LINES=()
 
 parse_argument()
@@ -160,7 +160,7 @@ list()
         done < $NP2_APP_LIST
     fi
     print_table
-    echo -e '\nUse `np2 show <id|name>` to get more details about an app'
+    info '\nUse `np2 show <id|name>` to get more details about an app'
 }
 
 show()
@@ -212,7 +212,7 @@ start()
                 APP_PATH=`realpath $1`
                 printf "$start_template" APP_PATH " │ " $APP_PATH
             else
-                echo "$1 file not exist or can not executed"
+                error "$1 file not exist or can not executed"
                 exit 1
             fi
         fi
@@ -240,7 +240,7 @@ pause()
 
         kill -17 $APP_PID
 
-        echo -e "The job id is ${APP_ID} has pause\n"
+        info -e "The job id is ${APP_ID} has pause\n"
     done
     list
 }
@@ -262,7 +262,7 @@ resume()
 
         kill -19 $APP_PID
 
-        echo -e "The job id is ${APP_ID} has resume\n"
+        info "The job id is ${APP_ID} has resume\n"
         list
     done
 }
@@ -299,7 +299,7 @@ logs()
     elif [ -n "$ONLY_ERR_LOG" ]; then
         tail -f $ERR_LOG
     else
-        echo "tail -f $ERR_LOG -f $OUT_LOG"
+        # echo "tail -f $ERR_LOG -f $OUT_LOG"
         tail -f $ERR_LOG -f $OUT_LOG
     fi
 }
@@ -330,7 +330,7 @@ exec_nohup()
 
     APP_PID=$!
     if [ ! -n "$APP_PID" ]; then
-        echo "Error! can not get pid, please retry."
+        error "Error! can not get pid, please retry."
         exit 1
     fi
     printf "$start_template" APP_PID " │ " $APP_PID
@@ -355,7 +355,6 @@ hanle_app_list()
 handle_delete()
 {
     D_LINE=`sed -n "$1p" $NP2_APP_LIST`
-    echo "$D_LINE"
     IFS=' ' read -ra D_ARRAY <<< "$D_LINE"
 
     APP_ID=${D_ARRAY[0]}
@@ -365,11 +364,17 @@ handle_delete()
     PID_FILE="$NP2_HOME_PIDS/$APP_NAME-$APP_ID.pid"
 
     kill -9 $APP_PID
-    rm -f $PID_FILE
 
-    sed -i -e "${i}d" $NP2_APP_LIST
+    if [ $? -eq 0 ]
+    then
+        rm -f $PID_FILE
 
-    echo "The job id is $1 has delete"
+        sed -i -e "${i}d" $NP2_APP_LIST
+
+        info "The job id is $APP_ID has delete"
+    else
+        error "The job id is $APP_ID can not be killed."
+    fi
 }
 
 get_ids()
@@ -383,7 +388,7 @@ get_ids()
             MATCH_COUNT=${#ARRAY_MATCH[@]}
 
             if [ $MATCH_COUNT == 0 ]; then
-                echo "Error! can not find the id or name, please check it again."
+                error "Error! can not find the id or name, please check it again."
                 exit 1
             elif [ $MATCH_COUNT == 1 ]; then
                 LINE_NUM=${ARRAY_MATCH[0]}
@@ -397,14 +402,14 @@ get_ids()
                     echo "${select_array[0]} ${select_array[1]} ${select_array[2]} ${select_array[3]} ${select_array[4]} ${select_array[5]}"
                 done
 
-                echo -e "\nFind multi jobs, please input all/id/id1,id2../no"
+                warn "\nFind multi jobs, please input all/id/id1,id2../no"
                 while true
                 do
                     LINES=()
                     read answer
                     if [ $answer == 'all' ]; then
                         if [ "$ONLY_ONE" = true ]; then
-                            echo "This action can only input one id, please input one."
+                            error "This action can only input one id, please input one."
                         else
                             for e in "${ARRAY_MATCH[@]}"
                             do
@@ -421,7 +426,7 @@ get_ids()
                         IFS=',' read -ra INPUT_IDS <<< "$answer"
 
                         if [ "$ONLY_ONE" = true ] && [ ${#INPUT_IDS[@]} != 1 ]; then
-                            echo "This action can only input one id, please input one."
+                            error "This action can only input one id, please input one."
                             break
                         fi
 
@@ -599,7 +604,7 @@ handle_show()
 
 need_help()
 {
-    echo -e "\nRun \`np2 help\` to see usage information"
+    info "\nRun \`np2 help\` to see usage information"
 }
 
 usage()

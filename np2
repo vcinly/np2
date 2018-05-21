@@ -1,0 +1,746 @@
+#!/usr/bin/env bash
+
+# -*- encoding : utf-8 -*-
+
+# TODO
+# restart
+
+FORMAT_COUNT=(0 0 0 8 0 0 0 0)
+FORMAT_LINES=()
+
+parse_argument()
+{
+    while
+        (( $# ))
+    do
+        case "$1" in
+            -n|--name)
+                if [ -n "$2" ]; then
+                    APP_NAME="$2"
+                    shift 2 ;
+                else need_help; shift 1 ;
+                fi;;
+            -l|--log)
+                if [ -n "$2" ]; then
+                    ENTIRE_LOG="$2"
+                    shift 2 ;
+                else need_help; shift 1 ;
+                fi;;
+            -o|--output)
+                if [ -n "$2" ]; then
+                    OUT_LOG="$2"
+                    shift 2 ;
+                else need_help; shift 1 ;
+                fi;;
+            -e| --error)
+                if [ -n "$2" ]; then
+                    ERROR_LOG="$2"
+                    shift 2 ;
+                else need_help; shift 1 ;
+                fi;;
+            --out)
+                shift 1 ;
+                if [ -n "$2" ]; then
+                    ONLY_OUT_LOG=true
+                else need_help;
+                fi;;
+            --err)
+                shift 1 ;
+                if [ -n "$2" ]; then
+                    ONLY_ERR_LOG=true
+                else need_help;
+                fi;;
+            help|-h|--help)
+                usage
+                exit 1
+                ;;
+            list|ls)
+                shift 1
+                list "$@"
+                break
+                ;;
+            show)
+                shift 1
+                show "$@"
+                break
+                ;;
+            start)
+                shift 1
+                start "$@"
+                break
+                ;;
+            pause|stop)
+                shift 1
+                pause "$@"
+                break
+                ;;
+            resume)
+                shift 1
+                resume "$@"
+                break
+                ;;
+            delete|kill)
+                shift 1
+                delete "$@"
+                break
+                ;;
+            restart)
+                shift 1
+                restart "$@"
+                break
+                ;;
+            logs)
+                shift 1
+                logs "$@"
+                break
+                ;;
+            --) shift ; break ;;
+            *)
+                error "Unrecognized $@"
+                need_help
+                exit 1
+                ;;
+        esac
+    done
+}
+
+np_initialize()
+{
+    NP2_HOME="$HOME/.np2"
+    NP2_HOME_LOGS="$NP2_HOME/logs"
+    NP2_HOME_PIDS="$NP2_HOME/pids"
+    NP2_APP_LIST="$NP2_HOME/app_list"
+
+    if [ ! -d "$NP2_HOME" ]; then
+        mkdir "$NP2_HOME"
+    fi
+
+    if [ ! -d "$NP2_HOME_LOGS" ]; then
+        mkdir "$NP2_HOME_LOGS"
+    fi
+
+    if [ ! -d "$NP2_HOME_PIDS" ]; then
+        mkdir "$NP2_HOME_PIDS"
+    fi
+
+    if [ ! -f "$NP2_APP_LIST" ]; then
+        touch "$NP2_APP_LIST"
+    fi
+}
+
+
+list()
+{
+
+    # Id │ pid │ name │ status │ uptime │ cpu │ mem  │ user
+
+    # echo -e "\nId | Pid | name | stat | uptime | cpu | mem | user\n"
+    if [ -n "$1" ]; then
+        get_ids "$1"
+
+        for i in "${LINES[@]}"
+        do
+            D_LINE=`sed -n "${i}p" $NP2_APP_LIST`
+
+            format_line "$D_LINE"
+        done
+
+    else
+        while read D_LINE
+        do
+            # echo $D_LINE
+            format_line "$D_LINE"
+        done < $NP2_APP_LIST
+    fi
+    print_table
+    echo -e '\nUse `np2 show <id|name>` to get more details about an app'
+}
+
+show()
+{
+    {
+        ONLY_ONE=true
+        get_ids "$@"
+
+        handle_show
+    }
+}
+
+start()
+{
+
+    local start_template="%-13s %-4s %-20s\n"
+    if [ -n "$1" ]; then
+        APP_ID=`wc -l < $NP2_APP_LIST`
+        printf "$start_template" APP_ID " │ " $APP_ID
+
+        if [ -n "$2" ]; then
+            APP_TYPE=`basename $1`
+            printf "$start_template" APP_TYPE " │ " $APP_TYPE
+            APP_TYPE_PATH=`which $APP_TYPE`
+            printf "$start_template" APP_TYPE_PATH " │ " $APP_TYPE_PATH
+
+            if [ ! -n "$APP_NAME" ]; then
+                APP_NAME=`basename $2 | cut -d . -f1`
+                printf "$start_template" APP_NAME " │ " $APP_NAME
+            fi
+            APP_PATH=`realpath $2`
+            printf "$start_template" APP_PATH " │ " $APP_PATH
+        else
+            if [ -x $1 ]; then
+                line=$(head -n 1 $1)
+                APP_TYPE=`basename $line`
+                if [ $APP_TYPE == "env" ]; then
+                    APP_TYPE=`echo $line | rev | cut -d ' ' -f1 | rev`
+                fi
+                printf "$start_template" APP_TYPE " │ " $APP_TYPE
+                APP_TYPE_PATH=`which $APP_TYPE`
+                printf "$start_template" APP_TYPE_PATH " │ " $APP_TYPE_PATH
+
+                if [ ! -n "$APP_NAME" ]; then
+                    APP_NAME=`basename $1 | cut -d . -f1`
+                fi
+                printf "$start_template" APP_NAME " │ " $APP_NAME
+
+                APP_PATH=`realpath $1`
+                printf "$start_template" APP_PATH " │ " $APP_PATH
+            else
+                echo "$1 file not exist or can not executed"
+                exit 1
+            fi
+        fi
+
+        exec_nohup "$@"
+
+    else need_help;
+    fi
+}
+
+pause()
+{
+    get_ids "$@"
+
+    for i in "${LINES[@]}"
+    do
+        D_LINE=`sed -n "${i}p" $NP2_APP_LIST`
+        # echo "$D_LINE"
+        IFS=' ' read -ra D_ARRAY <<< "$D_LINE"
+
+        APP_ID=${D_ARRAY[0]}
+        APP_PID=${D_ARRAY[1]}
+        APP_TYPE=${D_ARRAY[2]}
+        APP_NAME=${D_ARRAY[3]}
+
+        kill -17 $APP_PID
+
+        echo -e "The job id is ${APP_ID} has pause\n"
+    done
+    list
+}
+
+resume()
+{
+    get_ids "$@"
+
+    for i in "${LINES[@]}"
+    do
+        D_LINE=`sed -n "${i}p" $NP2_APP_LIST`
+        # echo "$D_LINE"
+        IFS=' ' read -ra D_ARRAY <<< "$D_LINE"
+
+        APP_ID=${D_ARRAY[0]}
+        APP_PID=${D_ARRAY[1]}
+        APP_TYPE=${D_ARRAY[2]}
+        APP_NAME=${D_ARRAY[3]}
+
+        kill -19 $APP_PID
+
+        echo -e "The job id is ${APP_ID} has resume\n"
+        list
+    done
+}
+
+delete()
+{
+    get_ids "$@"
+
+    for i in "${LINES[@]}"
+    do
+        handle_delete $i
+    done
+}
+
+# restart()
+# {
+# }
+
+logs()
+{
+    ONLY_ONE=true
+    get_ids "$@"
+
+    D_LINE=`sed -n "${LINES[0]}p" $NP2_APP_LIST`
+    IFS=' ' read -ra D_ARRAY <<< "$D_LINE"
+
+    OUT_LOG=${D_ARRAY[6]}
+    ERR_LOG=${D_ARRAY[7]}
+
+    if [ -n "$ONLY_OUT_LOG" ] && [ -n "$ONLY_ERR_LOG" ]; then
+        tail -f $ERR_LOG -f $OUT_LOG
+    elif [ -n "$ONLY_OUT_LOG" ]; then
+        tail -f $OUT_LOG
+    elif [ -n "$ONLY_ERR_LOG" ]; then
+        tail -f $ERR_LOG
+    else
+        echo "tail -f $ERR_LOG -f $OUT_LOG"
+        tail -f $ERR_LOG -f $OUT_LOG
+    fi
+}
+
+exec_nohup()
+{
+    local start_template="%-13s %-4s %-20s\n"
+    if [ -n "$ENTIRE_LOG" ]; then
+        printf "$start_template" ENTIRE_LOG " │ " $ENTIRE_LOG
+
+        printf "$start_template" NP2_CMD " │ " "nohup $@ >> $ENTIRE_LOG 2>&1 &"
+        nohup $@ >> $ENTIRE_LOG 2>&1 &
+    else
+        if [ ! -n "$OUT_LOG" ]; then
+            OUT_LOG="$NP2_HOME_LOGS/$APP_NAME-out-$APP_ID.log"
+        fi
+        printf "$start_template" OUT_LOG " │ " $OUT_LOG
+
+        if [ ! -n "$ERROR_LOG" ]; then
+            ERROR_LOG="$NP2_HOME_LOGS/$APP_NAME-error-$APP_ID.log"
+        fi
+        printf "$start_template" ERROR_LOG " │ " $ERROR_LOG
+
+        printf "$start_template" NP2_CMD " │ " "nohup $@ >> $OUT_LOG 2>>$ERROR_LOG &"
+
+        nohup $@ >> $OUT_LOG 2>>$ERROR_LOG &
+    fi
+
+    APP_PID=$!
+    if [ ! -n "$APP_PID" ]; then
+        echo "Error! can not get pid, please retry."
+        exit 1
+    fi
+    printf "$start_template" APP_PID " │ " $APP_PID
+
+    PID_FILE="$NP2_HOME_PIDS/$APP_NAME-$APP_ID.pid"
+    printf "$start_template" PID_FILE " │ " $PID_FILE
+
+    echo $APP_PID > $PID_FILE
+
+    hanle_app_list
+}
+
+hanle_app_list()
+{
+    APP_TIME=`date +%Y-%m-%dT%H:%M:%S`
+    printf "%-13s %-4s %-20s\n" APP_TIME " │ " $APP_TIME
+
+    # id pid app_type app_name app_path app_time out_log error_log
+    echo "$APP_ID $APP_PID $APP_TYPE $APP_NAME $APP_PATH $APP_TIME $OUT_LOG $ERROR_LOG $APP_TYPE_PATH" >> $NP2_APP_LIST
+}
+
+handle_delete()
+{
+    D_LINE=`sed -n "$1p" $NP2_APP_LIST`
+    echo "$D_LINE"
+    IFS=' ' read -ra D_ARRAY <<< "$D_LINE"
+
+    APP_ID=${D_ARRAY[0]}
+    APP_PID=${D_ARRAY[1]}
+    APP_TYPE=${D_ARRAY[2]}
+    APP_NAME=${D_ARRAY[3]}
+    PID_FILE="$NP2_HOME_PIDS/$APP_NAME-$APP_ID.pid"
+
+    kill -9 $APP_PID
+    rm -f $PID_FILE
+
+    sed -i -e "${i}d" $NP2_APP_LIST
+
+    echo "The job id is $1 has delete"
+}
+
+get_ids()
+{
+    LINES=()
+    if [ -n "$1" ]; then
+        LINE_NUM=`sed -n "/^$1 /=" $NP2_APP_LIST`
+        if [ ! -n "$LINE_NUM" ]; then
+            MULTI_LINE=`sed -n "/$1/p" $NP2_APP_LIST`
+            IFS=$'\n' read -rd '' -a ARRAY_MATCH <<< "$MULTI_LINE"
+            MATCH_COUNT=${#ARRAY_MATCH[@]}
+
+            if [ $MATCH_COUNT == 0 ]; then
+                echo "Error! can not find the id or name, please check it again."
+                exit 1
+            elif [ $MATCH_COUNT == 1 ]; then
+                LINE_NUM=${ARRAY_MATCH[0]}
+                handle_delete $LINE_NUM
+            else
+                echo "ID | PID | TYPE | NAME | PATH | TIME"
+                for e in "${ARRAY_MATCH[@]}"
+                do
+                    select_array=()
+                    IFS=' ' read -ra select_array <<< "$e"
+                    echo "${select_array[0]} ${select_array[1]} ${select_array[2]} ${select_array[3]} ${select_array[4]} ${select_array[5]}"
+                done
+
+                echo -e "\nFind multi jobs, please input all/id/id1,id2../no"
+                while true
+                do
+                    LINES=()
+                    read answer
+                    if [ $answer == 'all' ]; then
+                        if [ "$ONLY_ONE" = true ]; then
+                            echo "This action can only input one id, please input one."
+                        else
+                            for e in "${ARRAY_MATCH[@]}"
+                            do
+                                IFS=' ' read -ra select_array <<< "$e"
+                                INPUT_LINE=`sed -n "/^${select_array[0]} /=" $NP2_APP_LIST`
+                                LINES+=($INPUT_LINE)
+                            done
+
+                            break
+                        fi
+                    elif [ $answer == 'no' ]; then
+                        exit 1
+                    else
+                        IFS=',' read -ra INPUT_IDS <<< "$answer"
+
+                        if [ "$ONLY_ONE" = true ] && [ ${#INPUT_IDS[@]} != 1 ]; then
+                            echo "This action can only input one id, please input one."
+                            break
+                        fi
+
+
+                        for i in "${INPUT_IDS[@]}"; do
+                            INPUT_LINE=`sed -n "/^$i /=" $NP2_APP_LIST`
+                            if [ ! -n "$INPUT_LINE" ]; then
+                                echo "Can not find id $i, please input the correct all/id/id1,id2../no"
+                                break
+                            else
+                                LINES+=($INPUT_LINE)
+                            fi
+                        done
+                    fi
+
+                    if [ ${#INPUT_IDS[@]} == ${#LINES[@]} ]; then
+                        break
+                    fi
+                done
+            fi
+        else
+            LINES+=($LINE_NUM)
+        fi
+    else need_help;
+    fi
+}
+
+format_line()
+{
+    # Id │ pid │ name │ status │ uptime │ cpu │ mem  │ user
+
+    IFS=' ' read -ra D_ARRAY <<< "$1"
+    local app_id=${D_ARRAY[0]}
+    local app_pid=${D_ARRAY[1]}
+    local app_name=${D_ARRAY[3]}
+    if [ ! -n $app_pid ]; then error "Can not find pid with $app_pid, please run \`np2 clean\`"; exit 1; fi
+    local app_uptime=`ps -p $app_pid -o etime=`
+    local app_user=`ps -p $app_pid -o user=`
+    local app_cpu=`ps -p $app_pid -o %cpu= | tr -d ' '`
+    local app_mem=`ps -p $app_pid -o %mem= | tr -d ' '`
+    APP_STAT=`ps -p $app_pid -o stat=`
+
+    FORMAT_COUNT[0]=$((${#app_id}>${FORMAT_COUNT[0]}?${#app_id}:${FORMAT_COUNT[0]}))
+    FORMAT_COUNT[1]=$((${#app_pid}>${FORMAT_COUNT[1]}?${#app_pid}:${FORMAT_COUNT[1]}))
+    FORMAT_COUNT[2]=$((${#app_name}>${FORMAT_COUNT[2]}?${#app_name}:${FORMAT_COUNT[2]}))
+    # FORMAT_COUNT[3]=$((${#APP_ID}>${FORMAT_COUNT[3]}?${#APP_ID}:${FORMAT_COUNT[3]}))
+    FORMAT_COUNT[4]=$((${#app_uptime}>${FORMAT_COUNT[4]}?${#app_uptime}:${FORMAT_COUNT[4]}))
+    FORMAT_COUNT[5]=$((${#app_cpu}>${FORMAT_COUNT[5]}?${#app_cpu}:${FORMAT_COUNT[5]}))
+    FORMAT_COUNT[6]=$((${#app_mem}>${FORMAT_COUNT[6]}?${#app_mem}:${FORMAT_COUNT[6]}))
+    FORMAT_COUNT[7]=$((${#app_user}>${FORMAT_COUNT[7]}?${#app_user}:${FORMAT_COUNT[7]}))
+
+    # STAT
+    # R (TASK_RUNNING)，可执行状态
+    # S (TASK_INTERRUPTIBLE)，可中断的睡眠状态
+    # D (TASK_UNINTERRUPTIBLE) 不可中断的睡眠状态
+    # T (TASK_STOPPED or TASK_TRACED) 暂停状态或跟踪状态
+    # Z (TASK_DEAD – EXIT_ZOMBIE) 退出状态，进程成为僵尸进程
+    # X (TASK_DEAD – EXIT_DEAD) 退出状态，进程即将被销毁
+
+    # if [ $app_stat == 'S' ]; then
+    #     app_stat_name=$(echo -e "${Green}online${NC}")
+    # elif [ $app_stat == 'T' ]; then
+    #     app_stat_name=$(echo -e "${Red}stopped${NC}")
+    # else
+    #     app_stat_name=$(echo -e "${Yellow}${app_stat}${NC}")
+    # fi
+    handle_stat
+
+    FORMAT_LINES+="$app_id/$app_pid/$app_name/$APP_STAT_NAME/$app_uptime/$app_cpu/$app_mem/$app_user "
+}
+
+handle_stat()
+{
+    if [ $APP_STAT == 'S' ]; then
+        APP_STAT_NAME=$(echo -e "${Green}online${NC}")
+    elif [ $APP_STAT == 'T' ]; then
+        APP_STAT_NAME=$(echo -e "${Red}stopped${NC}")
+    else
+        APP_STAT_NAME=$(echo -e "${Yellow}${app_stat}${NC}")
+    fi
+}
+
+print_table()
+{
+    local total=0
+    local format_template=''
+    local title_template=''
+
+    # for i in ${FORMAT_COUNT[@]}
+    # do
+    #     (( i=i+2 ))
+    #     (( total += i+2 ))
+    #     format_template+="%-${i}s│ "
+    # done
+
+    for ((i=0; i<${#FORMAT_COUNT[@]}; ++i))
+    do
+        (( n=${FORMAT_COUNT[i]}+2 ))
+        (( total += ${n}+2 ))
+
+        title_template+="%-${n}s│ "
+
+        if [ $i == 3 ]; then n=21; fi
+
+        format_template+="%-${n}s│ "
+    done
+
+    total=$((total-1))
+    title_template="│ ${title_template}\n"
+    format_template="│ ${format_template}\n"
+
+    printf '┌'; repeat_string $total; printf '┐\n'
+
+    printf "$title_template" "id" "pid" "name" "status" "uptime" "cpu" "mem" "user"
+    printf '├'; repeat_string $total; printf '┤\n'
+
+    for l in ${FORMAT_LINES[@]}
+    do
+        IFS='/' read -ra T_ARRAY <<< $l
+        printf "$format_template" ${T_ARRAY[0]} ${T_ARRAY[1]} ${T_ARRAY[2]} ${T_ARRAY[3]} ${T_ARRAY[4]} ${T_ARRAY[5]} ${T_ARRAY[6]} ${T_ARRAY[7]}
+    done
+
+    printf '└'; repeat_string $total; printf '┘'
+
+}
+
+repeat_string()
+{
+    for ((i=0; i<$1; ++i)); do echo -e "─\c"; done
+}
+
+handle_show()
+{
+
+    D_LINE=`sed -n "${LINES[0]}p" $NP2_APP_LIST`
+    IFS=' ' read -ra D_ARRAY <<< "$D_LINE"
+
+    local app_id=${D_ARRAY[0]}
+    local app_pid=${D_ARRAY[1]}
+
+    local app_type=${D_ARRAY[2]}
+    local app_name=${D_ARRAY[3]}
+    local app_script_path=${D_ARRAY[4]}
+    local app_create_at=${D_ARRAY[5]}
+    local app_out_path=${D_ARRAY[6]}
+    local app_err_path=${D_ARRAY[7]}
+    local app_type_path=${D_ARRAY[8]}
+
+    if [ ! -n $app_pid ]; then error "Can not find pid with $app_pid, please run \`np2 clean\`"; exit 1; fi
+
+    local app_uptime=`ps -p $app_pid -o etime=`
+    local app_user=`ps -p $app_pid -o user=`
+    local app_cpu=`ps -p $app_pid -o %cpu= | tr -d ' '`
+    local app_mem=`ps -p $app_pid -o %mem= | tr -d ' '`
+
+    APP_STAT=`ps -p $app_pid -o stat=`
+    handle_stat
+
+    local show_template="%-20s %-4s %-20s\n"
+    "$show_template"
+
+    printf '\n'
+    printf "$show_template" "│ id" " │ " $app_id
+    printf "$show_template" "│ status" " │ " $APP_STAT_NAME
+    printf "$show_template" "│ name" " │ " $app_name
+    printf "$show_template" "│ uptime" " │ " $app_uptime
+    printf "$show_template" "│ app_type" " │ " $app_type
+    printf "$show_template" "│ app_type_path" " │ " $app_type_path
+    printf "$show_template" "│ app_path" " │ " $app_script_path
+    printf "$show_template" "│ error_log_path" " │ " $app_err_path
+    printf "$show_template" "│ output_log_path" " │ " $app_out_path
+    printf "$show_template" "│ created_at" " │ " $app_create_at
+    printf '\n'
+}
+
+need_help()
+{
+    echo -e "\nRun \`np2 help\` to see usage information"
+}
+
+usage()
+{
+    printf "%b" "
+Usage:
+
+    np2 <options> <action> <command line>
+
+  Available actions:
+
+    np2 list|ls              # list all jobs
+    np2 show                 # describe all parameters of a process id
+    np2 start                # start a nohup job
+    np2 pause|stop           # stop a process
+    np2 resume               # resume a process
+    np2 delete|kill          # kill job
+    np2 restart              # not implementation
+    np2 logs                 # stream logs file. Default stream all logs
+    np2 update               # get latest version
+
+  Available options:
+
+    Warnning! The following options must in advance of action.
+
+    np2 <options> start
+        -h --help            # output usage information
+        -n --name <name>     # set a <name> for job
+        -l --log <path>      # specify entire log file (error and out are both included)
+        -o --output <path>   # specify out log file
+        -e --error <path>    # specify error log file
+
+    np2 <options> logs
+        --err                # only shows error output
+        --out                # only shows standard output
+
+
+  File of interest
+
+    $HOME/.np2               # contain all np2 related files
+    $HOME/.np2/logs          # contain all np2 logs
+    $HOME/.np2/pids          # contain all np2 pids
+    $HOME/.np2/app_list      # contain all np2 jobs
+
+"
+}
+
+color() {
+    # Reset
+    NC='\033[0m'       # Text Reset
+
+    # Regular Colors
+    Black='\033[0;30m'        # Black
+    Red='\033[0;31m'          # Red
+    Green='\033[0;32m'        # Green
+    Yellow='\033[0;33m'       # Yellow
+    Blue='\033[0;34m'         # Blue
+    Purple='\033[0;35m'       # Purple
+    Cyan='\033[0;36m'         # Cyan
+    White='\033[0;37m'        # White
+
+    # Bold
+    BBlack='\033[1;30m'       # Black
+    BRed='\033[1;31m'         # Red
+    BGreen='\033[1;32m'       # Green
+    BYellow='\033[1;33m'      # Yellow
+    BBlue='\033[1;34m'        # Blue
+    BPurple='\033[1;35m'      # Purple
+    BCyan='\033[1;36m'        # Cyan
+    BWhite='\033[1;37m'       # White
+
+    # Underline
+    UBlack='\033[4;30m'       # Black
+    URed='\033[4;31m'         # Red
+    UGreen='\033[4;32m'       # Green
+    UYellow='\033[4;33m'      # Yellow
+    UBlue='\033[4;34m'        # Blue
+    UPurple='\033[4;35m'      # Purple
+    UCyan='\033[4;36m'        # Cyan
+    UWhite='\033[4;37m'       # White
+
+    # Background
+    On_Black='\033[40m'       # Black
+    On_Red='\033[41m'         # Red
+    On_Green='\033[42m'       # Green
+    On_Yellow='\033[43m'      # Yellow
+    On_Blue='\033[44m'        # Blue
+    On_Purple='\033[45m'      # Purple
+    On_Cyan='\033[46m'        # Cyan
+    On_White='\033[47m'       # White
+
+    # High Intensity
+    IBlack='\033[0;90m'       # Black
+    IRed='\033[0;91m'         # Red
+    IGreen='\033[0;92m'       # Green
+    IYellow='\033[0;93m'      # Yellow
+    IBlue='\033[0;94m'        # Blue
+    IPurple='\033[0;95m'      # Purple
+    ICyan='\033[0;96m'        # Cyan
+    IWhite='\033[0;97m'       # White
+
+    # Bold High Intensity
+    BIBlack='\033[1;90m'      # Black
+    BIRed='\033[1;91m'        # Red
+    BIGreen='\033[1;92m'      # Green
+    BIYellow='\033[1;93m'     # Yellow
+    BIBlue='\033[1;94m'       # Blue
+    BIPurple='\033[1;95m'     # Purple
+    BICyan='\033[1;96m'       # Cyan
+    BIWhite='\033[1;97m'      # White
+
+    # High Intensity backgrounds
+    On_IBlack='\033[0;100m'   # Black
+    On_IRed='\033[0;101m'     # Red
+    On_IGreen='\033[0;102m'   # Green
+    On_IYellow='\033[0;103m'  # Yellow
+    On_IBlue='\033[0;104m'    # Blue
+    On_IPurple='\033[0;105m'  # Purple
+    On_ICyan='\033[0;106m'    # Cyan
+    On_IWhite='\033[0;107m'   # White
+}
+
+debug()
+{
+    echo -e "${Green}$1${NC}"
+}
+
+info()
+{
+    echo -e "${Cyan}$1${NC}"
+}
+
+warn()
+{
+    echo -e "${Yellow}$1${NC}"
+}
+
+error()
+{
+    echo -e "${Red}$1${NC}"
+}
+
+
+init()
+{
+    color
+    np_initialize
+    parse_argument "$@"
+}
+
+init "$@"

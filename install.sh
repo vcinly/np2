@@ -36,7 +36,13 @@
 
         if [ -f "$INSTALL_DIR/np2" ]; then
             echo "=> np2 is already installed in $INSTALL_DIR, trying to update the script"
-            
+            new_version=`np2_download -s "$NP2_SOURCE_LOCAL/version"`
+            old_version=`cat "$INSTALL_DIR/version"`
+            if [ "$new_version" == "$old_version" ]
+            then
+                echo 'The version is latest.'
+                exit 1
+            fi
         else
             echo "=> Downloading np2 as script to '$INSTALL_DIR'"
         fi

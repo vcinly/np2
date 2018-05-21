@@ -607,10 +607,10 @@ handle_show()
     printf '\n'
 }
 
-# update()
-# {
-
-# }
+update()
+{
+    sh "$NP2_HOME/install.sh"
+}
 
 need_help()
 {

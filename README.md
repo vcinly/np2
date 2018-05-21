@@ -2,6 +2,21 @@
 
 NP2 is a Nohup Jobs Manager
 
+## Installation
+
+### Install script
+
+```sh
+curl -o- https://raw.githubusercontent.com/vcinly/np2/master/install.sh | bash
+```
+
+or Wget:
+
+```sh
+wget -qO- https://raw.githubusercontent.com/vcinly/np2/master/install.sh | bash
+```
+
+
 ```bash
 Usage:
 

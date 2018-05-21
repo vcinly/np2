@@ -30,7 +30,7 @@
 
     install() {
         INSTALL_DIR="$(np2_install_dir)"
-        NP2_SOURCE_LOCAL=""
+        NP2_SOURCE_LOCAL="https://raw.githubusercontent.com/vcinly/np2/master/np2"
 
         mkdir -p "$INSTALL_DIR"
 

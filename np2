@@ -10,6 +10,11 @@ FORMAT_LINES=()
 
 parse_argument()
 {
+    if [ $# -eq 0 ]; then
+        usage
+        exit 1
+    fi
+
     while
         (( $# ))
     do
@@ -94,7 +99,9 @@ parse_argument()
                 logs "$@"
                 break
                 ;;
-            --) shift ; break ;;
+            --) shift
+                break
+                ;;
             *)
                 error "Unrecognized $@"
                 need_help

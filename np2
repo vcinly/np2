@@ -4,7 +4,6 @@
 
 # TODO
 # restart
-# update
 
 FORMAT_COUNT=(3 4 5 8 6 4 4 5)
 FORMAT_LINES=()

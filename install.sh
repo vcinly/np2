@@ -42,6 +42,8 @@
             then
                 echo 'The version is latest.'
                 exit 1
+            else
+                echo "Updating version $old_version => $new_version"
             fi
         else
             echo "=> Downloading np2 as script to '$INSTALL_DIR'"

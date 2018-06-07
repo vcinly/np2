@@ -16,6 +16,10 @@ or Wget:
 wget -qO- https://raw.githubusercontent.com/vcinly/np2/master/install.sh | bash
 ```
 
+### Jobs listing
+
+![Jobs listing](https://github.com/vcinly/np2/raw/master/src/np2-list.png)
+
 
 ```bash
 Usage:
